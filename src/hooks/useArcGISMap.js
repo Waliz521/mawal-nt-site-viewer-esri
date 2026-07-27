@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import Map from '@arcgis/core/Map';
 import MapView from '@arcgis/core/views/MapView';
 import { createEsriImageryBasemap } from '../lib/arcgis/basemaps';
-import { toExtent } from '../lib/arcgis/extent';
-import { NT_CENTER, NT_EXTENT, NT_ZOOM } from '../lib/arcgis/config';
+import { goToNtDefaultView, toExtent } from '../lib/arcgis/extent';
+import { NT_CENTER, NT_ZOOM } from '../lib/arcgis/config';
 
 export function useArcGISMap({ center = NT_CENTER, zoom = NT_ZOOM, extent = null } = {}) {
   const containerRef = useRef(null);
@@ -33,7 +33,10 @@ export function useArcGISMap({ center = NT_CENTER, zoom = NT_ZOOM, extent = null
         if (cancelled) return;
         setView(mapView);
         setReady(true);
-        return mapView.goTo({ target: toExtent(extent ?? NT_EXTENT), padding: 24 });
+        if (extent) {
+          return mapView.goTo({ target: toExtent(extent) });
+        }
+        return mapView.goTo({ center, zoom });
       })
       .catch((error) => {
         if (!cancelled && error?.name !== 'AbortError') {
