@@ -1,16 +1,48 @@
 import { createClient } from '@supabase/supabase-js';
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (!url || !anonKey) {
-  console.warn('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY');
+function readEnv(name) {
+  const raw = import.meta.env[name];
+  if (typeof raw !== 'string') return '';
+  return raw.trim();
 }
 
-export const supabase = createClient(url ?? '', anonKey ?? '');
+const url = readEnv('VITE_SUPABASE_URL');
+const anonKey = readEnv('VITE_SUPABASE_ANON_KEY');
+
+export function getSupabaseConfigError() {
+  if (!url && !anonKey) {
+    return 'Missing VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Add them in Vercel → Settings → Environment Variables, then redeploy (Vite bakes them in at build time).';
+  }
+  if (!url) {
+    return 'Missing VITE_SUPABASE_URL. Add it in Vercel → Settings → Environment Variables, then redeploy.';
+  }
+  if (!anonKey) {
+    return 'Missing VITE_SUPABASE_ANON_KEY. Add it in Vercel → Settings → Environment Variables, then redeploy.';
+  }
+  if (!url.startsWith('https://') || !url.includes('.supabase.co')) {
+    return 'VITE_SUPABASE_URL looks invalid. It should be https://YOUR-PROJECT.supabase.co with no quotes or trailing spaces.';
+  }
+  if (anonKey.startsWith('"') || anonKey.endsWith('"') || anonKey.includes('\n')) {
+    return 'VITE_SUPABASE_ANON_KEY looks invalid (quotes or line breaks). Paste the raw JWT only, then redeploy.';
+  }
+  return null;
+}
+
+const configError = getSupabaseConfigError();
+if (configError) {
+  console.error(configError);
+}
+
+export const supabase = configError ? null : createClient(url, anonKey);
+
+function requireClient() {
+  if (!supabase) throw new Error(configError ?? 'Supabase is not configured.');
+  return supabase;
+}
 
 export async function fetchSites() {
-  const { data, error, count } = await supabase
+  const client = requireClient();
+  const { data, error, count } = await client
     .from('sites')
     .select('*', { count: 'exact' })
     .order('site_number', { ascending: true, nullsFirst: false })
@@ -28,13 +60,15 @@ export async function fetchSites() {
 }
 
 export async function fetchSiteBySlug(slug) {
-  const { data, error } = await supabase.from('sites').select('*').eq('slug', slug).maybeSingle();
+  const client = requireClient();
+  const { data, error } = await client.from('sites').select('*').eq('slug', slug).maybeSingle();
   if (error) throw error;
   return data;
 }
 
 export async function fetchSiteLayers(siteId) {
-  const { data, error } = await supabase
+  const client = requireClient();
+  const { data, error } = await client
     .from('site_layers')
     .select('*')
     .eq('site_id', siteId)
@@ -46,7 +80,8 @@ export async function fetchSiteLayers(siteId) {
 }
 
 export async function fetchAllLayers() {
-  const { data, error } = await supabase
+  const client = requireClient();
+  const { data, error } = await client
     .from('site_layers')
     .select('*, sites(name, slug)')
     .order('layer_type')
