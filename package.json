@@ -1,8 +1,8 @@
 {
-  "name": "mawal-nt-site-viewer-esri",
+  "name": "site-viewer-esri-sdk",
   "private": true,
   "version": "0.1.0",
-  "description": "ArcGIS Maps SDK edition of the Mawal NT community power-station site viewer — KML overlays, traffic-light ratings, Supabase-backed site data",
+  "description": "Mawal NT Site Viewer — ArcGIS Maps SDK edition (same Supabase backend as site-viewer)",
   "type": "module",
   "scripts": {
     "dev": "vite",

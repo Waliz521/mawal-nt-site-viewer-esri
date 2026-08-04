@@ -1,5 +1,4 @@
 import Extent from '@arcgis/core/geometry/Extent';
-import { NT_CENTER, NT_VIEW_PADDING, NT_ZOOM } from './config';
 
 /** ~450 m — a single compound fence is otherwise too small to be a valid target. */
 const MIN_SPAN_DEG = 0.004;
@@ -30,19 +29,4 @@ export function toExtent(extentJson) {
 export function reportGoToError(error) {
   if (error?.name === 'AbortError') return;
   console.warn('Map navigation failed', error);
-}
-
-/** MapView/SceneView must be mounted in a container before goTo is safe. */
-export function canNavigateView(view) {
-  return Boolean(view && !view.destroyed && view.ready && view.container);
-}
-
-export function safeGoTo(view, target) {
-  if (!canNavigateView(view)) return Promise.resolve();
-  return view.goTo(target).catch(reportGoToError);
-}
-
-/** Default overview position — uses NT_CENTER + NT_ZOOM from config (not extent fit). */
-export function goToNtDefaultView(view) {
-  return safeGoTo(view, { center: NT_CENTER, zoom: NT_ZOOM, padding: NT_VIEW_PADDING });
 }

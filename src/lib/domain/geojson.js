@@ -66,6 +66,83 @@ export function boundsFromLayers(layers) {
   return { minLat, maxLat, minLng, maxLng };
 }
 
+/** Fast reject before point-in-polygon tests. */
+export function boundsIntersect(a, b) {
+  if (!a || !b) return false;
+  return (
+    a.minLng <= b.maxLng &&
+    a.maxLng >= b.minLng &&
+    a.minLat <= b.maxLat &&
+    a.maxLat >= b.minLat
+  );
+}
+
+function forEachExteriorRing(geometry, visitRing) {
+  if (!geometry) return;
+  const polygons =
+    geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates ?? [];
+  for (const rings of polygons) {
+    if (rings?.[0]) visitRing(rings[0]);
+  }
+}
+
+/** Exterior ring vertices from a GeoJSON geometry or layer row. */
+export function collectGeometryTestPoints(geometryOrLayer) {
+  const geometry = getFeatureGeometry(geometryOrLayer);
+  const points = [];
+  forEachExteriorRing(geometry, (ring) => {
+    for (const [lng, lat] of ring) {
+      points.push([lng, lat]);
+    }
+  });
+  return points;
+}
+
+/**
+ * Spatial footprint for indigenous-location matching: bbox plus representative
+ * points (site coords, layer vertices, layer/site bbox centers).
+ */
+export function buildSiteSpatialFootprint(site, siteLayers = []) {
+  const testPoints = [];
+
+  if (site?.lat != null && site?.lng != null) {
+    testPoints.push([Number(site.lng), Number(site.lat)]);
+  }
+
+  for (const layer of siteLayers) {
+    const geometry = getFeatureGeometry(layer.geometry_geojson);
+    testPoints.push(...collectGeometryTestPoints(geometry));
+
+    const layerBounds = boundsFromFeature(geometry);
+    if (layerBounds) {
+      testPoints.push([
+        (layerBounds.minLng + layerBounds.maxLng) / 2,
+        (layerBounds.minLat + layerBounds.maxLat) / 2,
+      ]);
+    }
+  }
+
+  const bounds = boundsFromLayers(siteLayers);
+  if (bounds) {
+    testPoints.push([
+      (bounds.minLng + bounds.maxLng) / 2,
+      (bounds.minLat + bounds.maxLat) / 2,
+    ]);
+  }
+
+  return { bounds, testPoints };
+}
+
+/** True when any footprint point falls inside the location feature. */
+export function siteFootprintIntersectsFeature(footprint, locationFeature, locationBounds = null) {
+  if (!footprint?.bounds || footprint.testPoints.length === 0) return false;
+
+  const featureBounds = locationBounds ?? boundsFromFeature(locationFeature);
+  if (!featureBounds || !boundsIntersect(footprint.bounds, featureBounds)) return false;
+
+  return footprint.testPoints.some((point) => pointInFeature(point, locationFeature));
+}
+
 /** Centroid used to place a site on the map: explicit coords, else layer bounds. */
 export function siteCentroid(site, siteLayers = []) {
   if (site?.lat != null && site?.lng != null) {

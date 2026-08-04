@@ -1,13 +1,8 @@
 import GeoJSONLayer from '@arcgis/core/layers/GeoJSONLayer';
-import { NT_BOUNDARY_URL } from '../domain/boundaries';
-import { siteCentroid } from '../domain/geojson';
-import { TRAFFIC_LIGHT_COLORS } from '../domain/trafficLight';
 import { symbolForLayerType } from './layerStyles';
-import {
-  clusterMarkerSymbol,
-  siteMarkerSymbolForRating,
-  targetKwWidthStops,
-} from './siteMarkerSymbols';
+import { TRAFFIC_LIGHT_COLORS } from '../domain/trafficLight';
+import { siteCentroid } from '../domain/geojson';
+import { NT_BOUNDARY_URL } from '../domain/boundaries';
 
 const blobUrlCache = new Map();
 
@@ -27,6 +22,33 @@ const SITE_FIELDS = [
   { name: 'trafficLight', type: 'string' },
   { name: 'targetKw', type: 'double' },
 ];
+
+const MARKER_MIN_SIZE = 9;
+const MARKER_MAX_SIZE = 32;
+const MARKER_SIZE_STEPS = 4;
+
+/**
+ * Symbol area — not diameter — should track the target, otherwise a site twice
+ * the size of another looks four times bigger.
+ */
+function targetKwSizeStops(values) {
+  const positive = values.filter((value) => value > 0);
+  if (positive.length < 2) return null;
+
+  const min = Math.min(...positive);
+  const max = Math.max(...positive);
+  if (max === min) return null;
+
+  return Array.from({ length: MARKER_SIZE_STEPS + 1 }, (_, index) => {
+    const ratio = index / MARKER_SIZE_STEPS;
+    const value = min + (max - min) * ratio;
+    return {
+      value,
+      size: MARKER_MIN_SIZE + (MARKER_MAX_SIZE - MARKER_MIN_SIZE) * Math.sqrt(ratio),
+      label: index === 0 || index === MARKER_SIZE_STEPS ? `${Math.round(value)} kWac` : undefined,
+    };
+  });
+}
 
 /**
  * GeoJSONLayer only accepts WGS84 / CRS84. Source files exported from NR Maps
@@ -206,7 +228,7 @@ export function createSiteMarkersLayer(sites, layers, visibleSiteIds, id = 'site
 
   const featureCollection = { type: 'FeatureCollection', features };
   const ratings = [...new Set(features.map((f) => f.properties.trafficLight))];
-  const sizeStops = targetKwWidthStops(features.map((f) => f.properties.targetKw));
+  const sizeStops = targetKwSizeStops(features.map((f) => f.properties.targetKw));
 
   return new GeoJSONLayer(
     assignGeoJsonUrl(
@@ -240,14 +262,24 @@ export function createSiteMarkersLayer(sites, layers, visibleSiteIds, id = 'site
           type: 'unique-value',
           field: 'trafficLight',
           uniqueValueInfos: ratings.map((rating) => {
-            const colors = TRAFFIC_LIGHT_COLORS[rating] ?? { label: rating };
+            const colors = TRAFFIC_LIGHT_COLORS[rating] ?? { fill: '#64748b', stroke: '#334155' };
             return {
               value: rating,
               label: colors.label ?? rating,
-              symbol: siteMarkerSymbolForRating(rating),
+              symbol: {
+                type: 'simple-marker',
+                color: hexToRgba(colors.fill, 0.92),
+                size: MARKER_MIN_SIZE,
+                outline: { color: hexToRgb(colors.stroke), width: 1.5 },
+              },
             };
           }),
-          defaultSymbol: siteMarkerSymbolForRating('UNKNOWN'),
+          defaultSymbol: {
+            type: 'simple-marker',
+            color: [100, 116, 139, 0.92],
+            size: MARKER_MIN_SIZE,
+            outline: { color: [51, 65, 85], width: 1.5 },
+          },
           visualVariables: sizeStops
             ? [
                 {
@@ -264,7 +296,12 @@ export function createSiteMarkersLayer(sites, layers, visibleSiteIds, id = 'site
           clusterRadius: '70px',
           // A dedicated cluster symbol; `renderer` here would also override the
           // proportional symbols of individual sites.
-          symbol: clusterMarkerSymbol(),
+          symbol: {
+            type: 'simple-marker',
+            color: [15, 118, 110, 0.92],
+            size: 26,
+            outline: { color: [255, 255, 255, 0.9], width: 1.5 },
+          },
           fields: [
             { name: 'clusterTargetKw', onStatisticField: 'targetKw', statisticType: 'sum' },
           ],

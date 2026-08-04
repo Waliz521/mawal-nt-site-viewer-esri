@@ -8,7 +8,11 @@ import {
 import { LAYER_TYPE_ORDER } from '../lib/domain/layerTypes';
 import { fetchAllLayers, fetchSites } from '../lib/api/supabase';
 import { countSitesByBatch, filterSitesByBatch } from '../lib/domain/siteBatches';
-import { pointInFeature, siteCentroid } from '../lib/domain/geojson';
+import {
+  boundsFromFeature,
+  buildSiteSpatialFootprint,
+  siteFootprintIntersectsFeature,
+} from '../lib/domain/geojson';
 import { useSiteBatch } from './SiteBatchContext';
 
 const MapFiltersContext = createContext(null);
@@ -36,8 +40,8 @@ function computeVisibleLayerIds(layers, visibleSiteIds, visibleTypes) {
 
 /**
  * Site → location assignment for every location, computed once per batch.
- * 189 locations × 27 sites of point-in-polygon is far cheaper here than redoing
- * the hit test on each selection, and it also gives the dropdown its counts.
+ * Uses geometry overlap (bbox + polygon vertices/centers), not site centroid
+ * alone, so footprints that straddle an ILOC boundary still match.
  */
 function buildSiteIdsByLocation(sites, layers, locations) {
   const index = new Map();
@@ -50,14 +54,28 @@ function buildSiteIdsByLocation(sites, layers, locations) {
     layersBySite.set(layer.site_id, list);
   }
 
-  const placed = sites
-    .map((site) => ({ id: site.id, centroid: siteCentroid(site, layersBySite.get(site.id) ?? []) }))
-    .filter((entry) => entry.centroid);
+  const footprints = sites
+    .map((site) => ({
+      id: site.id,
+      ...buildSiteSpatialFootprint(site, layersBySite.get(site.id) ?? []),
+    }))
+    .filter((entry) => entry.bounds);
 
-  for (const location of locations) {
-    const ids = placed
-      .filter((entry) => pointInFeature(entry.centroid, location.feature))
-      .map((entry) => entry.id);
+  const locationEntries = locations.map((location) => ({
+    code: location.code,
+    feature: location.feature,
+    bounds: boundsFromFeature(location.feature),
+  }));
+
+  for (const location of locationEntries) {
+    if (!location.bounds) continue;
+
+    const ids = footprints
+      .filter((footprint) =>
+        siteFootprintIntersectsFeature(footprint, location.feature, location.bounds),
+      )
+      .map((footprint) => footprint.id);
+
     if (ids.length > 0) index.set(location.code, ids);
   }
 

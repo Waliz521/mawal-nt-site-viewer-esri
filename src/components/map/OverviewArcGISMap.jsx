@@ -2,9 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Map from '@arcgis/core/Map';
 import MapView from '@arcgis/core/views/MapView';
-import SceneView from '@arcgis/core/views/SceneView';
+import Expand from '@arcgis/core/widgets/Expand';
+import Zoom from '@arcgis/core/widgets/Zoom';
+import LayerList from '@arcgis/core/widgets/LayerList';
+import Legend from '@arcgis/core/widgets/Legend';
+import Measurement from '@arcgis/core/widgets/Measurement';
 import * as reactiveUtils from '@arcgis/core/core/reactiveUtils';
-import { createEsriImageryBasemap } from '../../lib/arcgis/basemaps';
+import { BASEMAP_OPTIONS, createEsriImageryBasemap } from '../../lib/arcgis/basemaps';
 import { buildFeatureCollection } from '../../lib/arcgis/layerStyles';
 import {
   createGeoJsonLayer,
@@ -14,10 +18,8 @@ import {
   revokeBlobUrl,
 } from '../../lib/arcgis/geoJsonLayers';
 import { boundsFromFeature, boundsFromLayers, extentFromBounds } from '../../lib/domain/geojson';
-import { toExtent, goToNtDefaultView, safeGoTo } from '../../lib/arcgis/extent';
-import { NT_CENTER, NT_ZOOM } from '../../lib/arcgis/config';
-import { mountOverviewMapUi } from '../../lib/arcgis/overviewMapUi';
-import { swapMapSceneViews } from '../../lib/arcgis/viewModeToggle';
+import { reportGoToError, toExtent } from '../../lib/arcgis/extent';
+import { NT_CENTER, NT_EXTENT, NT_ZOOM } from '../../lib/arcgis/config';
 import MapFiltersWidget from './MapFiltersWidget';
 import MapLayersWidget from './MapLayersWidget';
 
@@ -46,6 +48,33 @@ const OPERATIONAL_LAYER_IDS = [
   'indigenous-locations',
   'indigenous-selected',
 ];
+
+/** Custom picker — creates a fresh Basemap on each click (avoids destroyed instances). */
+function createBasemapPicker(map) {
+  const root = document.createElement('div');
+  root.className = 'basemap-picker esri-widget';
+
+  let activeId = map.basemap?.id ?? 'world-imagery';
+
+  function render() {
+    root.replaceChildren();
+    for (const option of BASEMAP_OPTIONS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `basemap-picker__btn${option.id === activeId ? ' is-active' : ''}`;
+      btn.textContent = option.title;
+      btn.addEventListener('click', () => {
+        map.basemap = option.create();
+        activeId = option.id;
+        render();
+      });
+      root.appendChild(btn);
+    }
+  }
+
+  render();
+  return root;
+}
 
 function removeOperationalLayers(map) {
   for (const id of OPERATIONAL_LAYER_IDS) {
@@ -85,9 +114,7 @@ export default function OverviewArcGISMap({
 }) {
   const containerRef = useRef(null);
   const viewRef = useRef(null);
-  const viewsRef = useRef(null);
-  const mapUiRef = useRef(null);
-  const is3DRef = useRef(false);
+  const measurementRef = useRef(null);
   const [filtersHost, setFiltersHost] = useState(null);
   const [layersHost, setLayersHost] = useState(null);
   const [ready, setReady] = useState(false);
@@ -138,12 +165,11 @@ export default function OverviewArcGISMap({
     if (!container) return undefined;
 
     let cancelled = false;
+    const expands = [];
 
-    const map = new Map({
-      basemap: createEsriImageryBasemap(),
-    });
-
-    const mapView = new MapView({
+    // Fresh basemap instance per Map lifecycle — never share module singletons.
+    const map = new Map({ basemap: createEsriImageryBasemap() });
+    const view = new MapView({
       container,
       map,
       center: NT_CENTER,
@@ -153,70 +179,95 @@ export default function OverviewArcGISMap({
       popup: { dockEnabled: true, dockOptions: { position: 'bottom-right' } },
     });
 
-    function createSceneView() {
-      map.ground = 'world-elevation';
-      return new SceneView({
-        container: null,
-        map,
-        center: NT_CENTER,
-        zoom: NT_ZOOM,
-        viewingMode: 'global',
-        ui: { components: [] },
-        environment: {
-          atmosphereEnabled: true,
-          starsEnabled: false,
-        },
-        popup: { dockEnabled: true, dockOptions: { position: 'bottom-right' } },
-      });
-    }
+    viewRef.current = view;
 
-    viewsRef.current = { map, mapView, sceneView: null, container, createSceneView };
-    viewRef.current = mapView;
-    is3DRef.current = false;
+    view.ui.add(new Zoom({ view }), 'top-left');
 
-    function mountUi(activeView, is3D) {
-      mapUiRef.current?.destroy();
-      mapUiRef.current = mountOverviewMapUi({
-        view: activeView,
-        map,
-        is3D,
-        onFiltersHost: setFiltersHost,
-        onLayersHost: setLayersHost,
-        onViewModeToggle: async () => {
-          const views = viewsRef.current;
-          if (!views || cancelled) return;
+    // Create Measurement without an active tool — activating before view.ready
+    // crashes DistanceMeasurement2D (view.on is undefined).
+    const measurement = new Measurement({ view });
+    measurementRef.current = measurement;
+    const measureExpand = new Expand({
+      view,
+      content: measurement,
+      expandIcon: 'measure',
+      expandTooltip: 'Measure',
+      group: 'top-right',
+    });
+    expands.push(measureExpand);
+    view.ui.add(measureExpand, 'top-right');
 
-          const to3D = !is3DRef.current;
-          if (to3D && !views.sceneView) {
-            views.sceneView = views.createSceneView();
-          }
-          if (!views.sceneView) return;
+    const measureExpandedHandle = reactiveUtils.watch(
+      () => measureExpand.expanded,
+      (expanded) => {
+        if (expanded) {
+          measurement.activeTool = 'distance';
+        } else {
+          measurement.clear();
+          measurement.activeTool = null;
+        }
+      },
+    );
 
-          mapUiRef.current?.destroy();
-          mapUiRef.current = null;
-          setFiltersHost(null);
-          setLayersHost(null);
+    // Esri's LayerList handles the operational layers; the KML type toggles are
+    // rendered underneath it, inside the same Expand.
+    const layersNode = document.createElement('div');
+    layersNode.className = 'map-panel-host map-layers-panel';
+    const layerListNode = document.createElement('div');
+    layersNode.appendChild(layerListNode);
+    const layerList = new LayerList({ view, container: layerListNode });
+    const layerTypesNode = document.createElement('div');
+    layersNode.appendChild(layerTypesNode);
 
-          const activeViewNext = await swapMapSceneViews({
-            mapView: views.mapView,
-            sceneView: views.sceneView,
-            container: views.container,
-            to3D,
-          });
+    const layersExpand = new Expand({
+      view,
+      content: layersNode,
+      expandIcon: 'layers',
+      expandTooltip: 'Layers',
+      group: 'top-right',
+    });
+    expands.push(layersExpand);
+    view.ui.add(layersExpand, 'top-right');
+    setLayersHost(layerTypesNode);
 
-          is3DRef.current = to3D;
-          viewRef.current = activeViewNext;
-          mountUi(activeViewNext, to3D);
-        },
-      });
-    }
+    const filtersNode = document.createElement('div');
+    filtersNode.className = 'map-panel-host';
+    const filtersExpand = new Expand({
+      view,
+      content: filtersNode,
+      expandIcon: 'filter',
+      expandTooltip: 'Filters',
+      group: 'top-right',
+    });
+    expands.push(filtersExpand);
+    view.ui.add(filtersExpand, 'top-right');
+    setFiltersHost(filtersNode);
 
-    mountUi(mapView, false);
+    const basemapExpand = new Expand({
+      view,
+      content: createBasemapPicker(map),
+      expandIcon: 'basemap',
+      expandTooltip: 'Basemap',
+      group: 'top-right',
+    });
+    expands.push(basemapExpand);
+    view.ui.add(basemapExpand, 'top-right');
 
-    Promise.all([mapView.when(), map.basemap.load()])
+    const legendExpand = new Expand({
+      view,
+      content: new Legend({ view }),
+      expandIcon: 'legend',
+      expandTooltip: 'Legend',
+      group: 'bottom-left',
+    });
+    expands.push(legendExpand);
+    view.ui.add(legendExpand, 'bottom-left');
+
+    Promise.all([view.when(), map.basemap.load()])
       .then(() => {
         if (cancelled) return;
         setReady(true);
+        return view.goTo({ target: toExtent(NT_EXTENT), padding: 24 });
       })
       .catch((error) => {
         if (!cancelled && error?.name !== 'AbortError') {
@@ -226,15 +277,18 @@ export default function OverviewArcGISMap({
 
     return () => {
       cancelled = true;
-      mapUiRef.current?.destroy();
-      mapUiRef.current = null;
       viewRef.current = null;
-      viewsRef.current = null;
+      measurementRef.current = null;
       setReady(false);
       setFiltersHost(null);
       setLayersHost(null);
-      mapView.destroy();
-      viewsRef.current?.sceneView?.destroy();
+      measureExpandedHandle?.remove?.();
+      measurement.clear();
+      measurement.activeTool = null;
+      for (const expand of expands) expand.destroy();
+      layerList.destroy();
+      measurement.destroy();
+      view.destroy();
     };
   }, []);
 
@@ -312,11 +366,11 @@ export default function OverviewArcGISMap({
       const extent = toExtent(extentFromBounds(boundsFromLayers(siteLayers)));
 
       if (extent) {
-        safeGoTo(view, { target: extent, padding: 48 });
+        view.goTo({ target: extent, padding: 48 }).catch(reportGoToError);
         return;
       }
       if (site?.lng != null && site?.lat != null) {
-        safeGoTo(view, { center: [site.lng, site.lat], zoom: 15 });
+        view.goTo({ center: [site.lng, site.lat], zoom: 15 }).catch(reportGoToError);
         return;
       }
     }
@@ -325,12 +379,12 @@ export default function OverviewArcGISMap({
       const location = locations.find((row) => row.code === selectedIndigenousCode);
       const extent = toExtent(extentFromBounds(boundsFromFeature(location?.feature)));
       if (extent) {
-        safeGoTo(view, { target: extent, padding: 40 });
+        view.goTo({ target: extent, padding: 40 }).catch(reportGoToError);
         return;
       }
     }
 
-    goToNtDefaultView(view);
+    view.goTo({ target: toExtent(NT_EXTENT), padding: 24 }).catch(reportGoToError);
   }, [ready, selectedCommunityId, selectedIndigenousCode, mapResetKey]);
 
   return (
