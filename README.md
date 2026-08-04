@@ -22,6 +22,20 @@ cd ..\site-viewer
 npm run ingest:greenfield
 ```
 
+## Deploy (Vercel)
+
+1. Import repo **`mawal-nt-site-viewer-esri`** in Vercel (Framework: **Vite**).
+2. **Required** environment variables (Production + Preview):
+
+   | Name | Value |
+   |------|--------|
+   | `VITE_SUPABASE_URL` | Same as Leaflet app |
+   | `VITE_SUPABASE_ANON_KEY` | Same as Leaflet app |
+
+3. Deploy. If you add variables after the first deploy, **redeploy** so Vite bakes them into the bundle.
+
+Live URL: `https://mawal-nt-site-viewer-esri.vercel.app`
+
 ## Stack
 
 - React 19 + Vite 6 + React Router 7

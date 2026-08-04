@@ -1,16 +1,36 @@
 import { createClient } from '@supabase/supabase-js';
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const url = import.meta.env.VITE_SUPABASE_URL?.trim();
+const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
 
-if (!url || !anonKey) {
-  console.warn('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY');
+export const SUPABASE_CONFIGURED = Boolean(url && anonKey);
+
+export const MISSING_SUPABASE_ENV_MESSAGE =
+  'Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY on this deployment. In Vercel → Project → Settings → Environment Variables, add both keys (same values as the Leaflet app), then redeploy.';
+
+let client = null;
+
+export function getSupabaseClient() {
+  if (!SUPABASE_CONFIGURED) {
+    throw new Error(MISSING_SUPABASE_ENV_MESSAGE);
+  }
+
+  if (!client) {
+    client = createClient(url, anonKey);
+  }
+
+  return client;
 }
 
-export const supabase = createClient(url ?? '', anonKey ?? '');
+/** @deprecated Prefer getSupabaseClient() — kept for any legacy imports. */
+export const supabase = {
+  from(table) {
+    return getSupabaseClient().from(table);
+  },
+};
 
 export async function fetchSites() {
-  const { data, error, count } = await supabase
+  const { data, error, count } = await getSupabaseClient()
     .from('sites')
     .select('*', { count: 'exact' })
     .order('site_number', { ascending: true, nullsFirst: false })
@@ -28,13 +48,17 @@ export async function fetchSites() {
 }
 
 export async function fetchSiteBySlug(slug) {
-  const { data, error } = await supabase.from('sites').select('*').eq('slug', slug).maybeSingle();
+  const { data, error } = await getSupabaseClient()
+    .from('sites')
+    .select('*')
+    .eq('slug', slug)
+    .maybeSingle();
   if (error) throw error;
   return data;
 }
 
 export async function fetchSiteLayers(siteId) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('site_layers')
     .select('*')
     .eq('site_id', siteId)
@@ -46,7 +70,7 @@ export async function fetchSiteLayers(siteId) {
 }
 
 export async function fetchAllLayers() {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('site_layers')
     .select('*, sites(name, slug)')
     .order('layer_type')
