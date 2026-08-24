@@ -1,6 +1,16 @@
 import Basemap from '@arcgis/core/Basemap';
 import TileLayer from '@arcgis/core/layers/TileLayer';
-import { ESRI_IMAGERY_TILE, ESRI_REFERENCE_TILE } from './config';
+import NtgWmsTileLayer from './NtgWmsTileLayer';
+import {
+  ESRI_IMAGERY_TILE,
+  ESRI_REFERENCE_TILE,
+  getNtgWmsServiceUrl,
+  NTG_ATTRIBUTION,
+  NTG_WMS_IMAGE_FORMAT,
+  NTG_WMS_LAYER,
+  NTG_WMS_SRS,
+  NTG_WMS_VERSION,
+} from './config';
 
 export const ESRI_TILE_SERVICES = {
   imagery: ESRI_IMAGERY_TILE,
@@ -93,10 +103,31 @@ export function createEsriOceansBasemap() {
   );
 }
 
+/** NTG aerial mosaic via WMS GetMap tiles (CC BY 4.0). */
+export function createNtgAerialBasemap() {
+  const tileLayer = new NtgWmsTileLayer({
+    wmsUrl: getNtgWmsServiceUrl(),
+    wmsLayerName: NTG_WMS_LAYER,
+    wmsVersion: NTG_WMS_VERSION,
+    wmsFormat: NTG_WMS_IMAGE_FORMAT,
+    wmsSrs: NTG_WMS_SRS,
+    title: 'NTG Aerial Photography',
+    copyright: NTG_ATTRIBUTION,
+  });
+
+  return new Basemap({
+    id: 'ntg-aerial',
+    title: 'NTG Aerial Photography',
+    baseLayers: [tileLayer],
+    copyright: NTG_ATTRIBUTION,
+  });
+}
+
 /** Factories only — never reuse Basemap instances across Map lifecycles. */
 export const BASEMAP_OPTIONS = [
   { id: 'world-imagery', title: 'Imagery', create: createEsriImageryBasemap },
   { id: 'world-imagery-plain', title: 'Imagery (no labels)', create: createEsriImageryOnlyBasemap },
+  { id: 'ntg-aerial', title: 'NTG Aerial Photography', create: createNtgAerialBasemap },
   { id: 'world-streets', title: 'Streets', create: createEsriStreetsBasemap },
   { id: 'world-topo', title: 'Topographic', create: createEsriTopoBasemap },
   { id: 'world-terrain', title: 'Terrain', create: createEsriTerrainBasemap },

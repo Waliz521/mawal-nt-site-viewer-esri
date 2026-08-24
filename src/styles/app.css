@@ -545,6 +545,36 @@ arcgis-map > div {
   display: block;
 }
 
+/* Always-visible map attribution — bottom centre pill, flush to map edge */
+.map-attribution-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  z-index: 10;
+  width: max-content;
+  max-width: calc(100% - 5rem);
+  padding: 0.22rem 0.55rem;
+  background: rgba(0, 0, 0, 0.84);
+  color: #fff;
+  font-size: 0.58rem;
+  line-height: 1.35;
+  text-align: center;
+  border-radius: 6px 6px 0 0;
+  pointer-events: none;
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.map-attribution-bar p {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.arcgis-map-container .esri-attribution,
+.arcgis-map .esri-attribution {
+  display: none;
+}
+
 .arcgis-map-loading {
   position: absolute;
   inset: 0;

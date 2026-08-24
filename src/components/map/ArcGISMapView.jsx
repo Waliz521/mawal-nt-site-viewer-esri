@@ -1,7 +1,10 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Expand from '@arcgis/core/widgets/Expand';
 import { useArcGISMap } from '../../hooks/useArcGISMap';
+import { createBasemapPicker } from '../../lib/arcgis/basemapPicker';
 import { buildFeatureCollection } from '../../lib/arcgis/layerStyles';
 import { createGeoJsonLayer, createSiteMarkersLayer, revokeBlobUrl } from '../../lib/arcgis/geoJsonLayers';
+import MapAttributionBar from './MapAttributionBar';
 
 export default function ArcGISMapView({
   className = 'arcgis-map',
@@ -10,9 +13,11 @@ export default function ArcGISMapView({
   visibleLayerIds = new Set(),
   layerId = 'overview-layers',
   showSiteMarkers = true,
+  showBasemapPicker = false,
   center = null,
   zoom = null,
 }) {
+  const [activeBasemapId, setActiveBasemapId] = useState('world-imagery');
   const { containerRef, view, ready } = useArcGISMap({ center, zoom });
 
   const featureCollection = useMemo(
@@ -27,6 +32,23 @@ export default function ArcGISMapView({
     );
     return sites.filter((site) => siteIdsWithLayers.has(site.id) || visibleLayerIds.size === 0);
   }, [sites, layers, visibleLayerIds, showSiteMarkers]);
+
+  useEffect(() => {
+    if (!ready || !view || !showBasemapPicker) return undefined;
+
+    const basemapExpand = new Expand({
+      view,
+      content: createBasemapPicker(view.map, { onSelect: setActiveBasemapId }),
+      expandIcon: 'basemap',
+      expandTooltip: 'Basemap',
+      group: 'top-right',
+    });
+    view.ui.add(basemapExpand, 'top-right');
+
+    return () => {
+      basemapExpand.destroy();
+    };
+  }, [ready, view, showBasemapPicker]);
 
   useEffect(() => {
     if (!ready || !view) return undefined;
@@ -63,6 +85,7 @@ export default function ArcGISMapView({
     <div className={className}>
       <div ref={containerRef} className="arcgis-map-container" />
       {!ready ? <div className="arcgis-map-loading">Loading map…</div> : null}
+      <MapAttributionBar basemapId={activeBasemapId} />
     </div>
   );
 }

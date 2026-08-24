@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Map from '@arcgis/core/Map';
 import MapView from '@arcgis/core/views/MapView';
 import { createEsriImageryBasemap } from '../lib/arcgis/basemaps';
+import { addAttributionWidget } from '../lib/arcgis/mapAttribution';
 import { toExtent } from '../lib/arcgis/extent';
 import { NT_CENTER, NT_EXTENT, NT_ZOOM } from '../lib/arcgis/config';
 
@@ -16,6 +17,7 @@ export function useArcGISMap({ center = NT_CENTER, zoom = NT_ZOOM, extent = null
     if (!container) return undefined;
 
     let cancelled = false;
+    let attribution = null;
     const map = new Map({ basemap: createEsriImageryBasemap() });
     const mapView = new MapView({
       container,
@@ -23,10 +25,12 @@ export function useArcGISMap({ center = NT_CENTER, zoom = NT_ZOOM, extent = null
       center,
       zoom,
       constraints: { snapToZoom: false },
+      ui: { components: [] },
       popup: { dockEnabled: true, dockOptions: { position: 'bottom-right' } },
     });
 
     viewRef.current = mapView;
+    attribution = addAttributionWidget(mapView, 'bottom-right');
 
     Promise.all([mapView.when(), map.basemap.load()])
       .then(() => {
@@ -44,6 +48,7 @@ export function useArcGISMap({ center = NT_CENTER, zoom = NT_ZOOM, extent = null
     return () => {
       cancelled = true;
       viewRef.current = null;
+      attribution?.destroy();
       setReady(false);
       setView(null);
       mapView.destroy();

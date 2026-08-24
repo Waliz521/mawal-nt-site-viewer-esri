@@ -8,7 +8,9 @@ import LayerList from '@arcgis/core/widgets/LayerList';
 import Legend from '@arcgis/core/widgets/Legend';
 import Measurement from '@arcgis/core/widgets/Measurement';
 import * as reactiveUtils from '@arcgis/core/core/reactiveUtils';
-import { BASEMAP_OPTIONS, createEsriImageryBasemap } from '../../lib/arcgis/basemaps';
+import { createEsriImageryBasemap } from '../../lib/arcgis/basemaps';
+import { createBasemapPicker } from '../../lib/arcgis/basemapPicker';
+import { addAttributionWidget } from '../../lib/arcgis/mapAttribution';
 import { buildFeatureCollection } from '../../lib/arcgis/layerStyles';
 import {
   createGeoJsonLayer,
@@ -22,6 +24,7 @@ import { reportGoToError, toExtent } from '../../lib/arcgis/extent';
 import { NT_CENTER, NT_EXTENT, NT_ZOOM } from '../../lib/arcgis/config';
 import MapFiltersWidget from './MapFiltersWidget';
 import MapLayersWidget from './MapLayersWidget';
+import MapAttributionBar from './MapAttributionBar';
 
 const NT_BOUNDARY_STYLE = {
   fillColor: [255, 255, 255, 0.03],
@@ -48,33 +51,6 @@ const OPERATIONAL_LAYER_IDS = [
   'indigenous-locations',
   'indigenous-selected',
 ];
-
-/** Custom picker — creates a fresh Basemap on each click (avoids destroyed instances). */
-function createBasemapPicker(map) {
-  const root = document.createElement('div');
-  root.className = 'basemap-picker esri-widget';
-
-  let activeId = map.basemap?.id ?? 'world-imagery';
-
-  function render() {
-    root.replaceChildren();
-    for (const option of BASEMAP_OPTIONS) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = `basemap-picker__btn${option.id === activeId ? ' is-active' : ''}`;
-      btn.textContent = option.title;
-      btn.addEventListener('click', () => {
-        map.basemap = option.create();
-        activeId = option.id;
-        render();
-      });
-      root.appendChild(btn);
-    }
-  }
-
-  render();
-  return root;
-}
 
 function removeOperationalLayers(map) {
   for (const id of OPERATIONAL_LAYER_IDS) {
@@ -117,6 +93,7 @@ export default function OverviewArcGISMap({
   const measurementRef = useRef(null);
   const [filtersHost, setFiltersHost] = useState(null);
   const [layersHost, setLayersHost] = useState(null);
+  const [activeBasemapId, setActiveBasemapId] = useState('world-imagery');
   const [ready, setReady] = useState(false);
 
   // Read at layer-creation time so a visibility change alone never rebuilds layers.
@@ -180,6 +157,9 @@ export default function OverviewArcGISMap({
     });
 
     viewRef.current = view;
+
+    const attribution = addAttributionWidget(view, 'bottom-right');
+    expands.push({ destroy: () => attribution.destroy() });
 
     view.ui.add(new Zoom({ view }), 'top-left');
 
@@ -245,7 +225,7 @@ export default function OverviewArcGISMap({
 
     const basemapExpand = new Expand({
       view,
-      content: createBasemapPicker(map),
+      content: createBasemapPicker(map, { onSelect: setActiveBasemapId }),
       expandIcon: 'basemap',
       expandTooltip: 'Basemap',
       group: 'top-right',
@@ -391,6 +371,7 @@ export default function OverviewArcGISMap({
     <div className="arcgis-map arcgis-map-full">
       <div ref={containerRef} className="arcgis-map-container" />
       {!ready ? <div className="arcgis-map-loading">Loading map…</div> : null}
+      <MapAttributionBar basemapId={activeBasemapId} />
       {filtersHost ? createPortal(filterPanel, filtersHost) : null}
       {layersHost ? createPortal(layersPanel, layersHost) : null}
     </div>

@@ -102,6 +102,7 @@ export default function SiteDetailPage() {
             visibleLayerIds={visibleLayerIds}
             layerId={`site-${site.id}-layers`}
             showSiteMarkers={false}
+            showBasemapPicker
             center={mapCenter}
             zoom={16}
           />
