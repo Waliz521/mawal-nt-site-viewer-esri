@@ -6,6 +6,7 @@ import ArcGISMapView from '../../components/map/ArcGISMapView';
 import TrafficLightBadge from '../../components/ui/TrafficLightBadge';
 import { useSiteBatch } from '../../contexts/SiteBatchContext';
 import { fetchSiteBySlug, fetchSiteLayers } from '../../lib/api/supabase';
+import { boundsFromLayers } from '../../lib/domain/geojson';
 import { LAYER_TYPE_ORDER } from '../../lib/domain/layerTypes';
 import { normalizeSiteBatch, SITE_BATCH_GREENFIELD } from '../../lib/domain/siteBatches';
 
@@ -47,6 +48,11 @@ export default function SiteDetailPage() {
     () => new Set(layers.filter((l) => visibleTypes.has(l.layer_type)).map((l) => l.id)),
     [layers, visibleTypes],
   );
+
+  const mapExtentBounds = useMemo(() => {
+    const visibleLayers = layers.filter((layer) => visibleLayerIds.has(layer.id));
+    return boundsFromLayers(visibleLayers);
+  }, [layers, visibleLayerIds]);
 
   function toggleType(type) {
     setVisibleTypes((prev) => {
@@ -103,6 +109,7 @@ export default function SiteDetailPage() {
             layerId={`site-${site.id}-layers`}
             showSiteMarkers={false}
             showBasemapPicker
+            extentBounds={mapExtentBounds}
             center={mapCenter}
             zoom={16}
           />

@@ -3,7 +3,13 @@ import Expand from '@arcgis/core/widgets/Expand';
 import { useArcGISMap } from '../../hooks/useArcGISMap';
 import { createBasemapPicker } from '../../lib/arcgis/basemapPicker';
 import { buildFeatureCollection } from '../../lib/arcgis/layerStyles';
-import { createGeoJsonLayer, createSiteMarkersLayer, revokeBlobUrl } from '../../lib/arcgis/geoJsonLayers';
+import {
+  createGeoJsonLayer,
+  createSiteMarkersLayer,
+  revokeAllBlobUrls,
+} from '../../lib/arcgis/geoJsonLayers';
+import { extentFromBounds } from '../../lib/domain/geojson';
+import { reportGoToError, toExtent } from '../../lib/arcgis/extent';
 import MapAttributionBar from './MapAttributionBar';
 
 export default function ArcGISMapView({
@@ -14,6 +20,7 @@ export default function ArcGISMapView({
   layerId = 'overview-layers',
   showSiteMarkers = true,
   showBasemapPicker = false,
+  extentBounds = null,
   center = null,
   zoom = null,
 }) {
@@ -66,20 +73,34 @@ export default function ArcGISMapView({
       map.add(geoLayer);
     }
 
-    if (showSiteMarkers && sites.length > 0) {
-      const markers = createSiteMarkersLayer(sites, 'site-markers');
-      map.add(markers);
+    if (showSiteMarkers && visibleSites.length > 0) {
+      const markers = createSiteMarkersLayer(
+        visibleSites,
+        layers,
+        new Set(visibleSites.map((site) => site.id)),
+        'site-markers',
+      );
+      if (markers) map.add(markers);
     }
 
-    return () => {
-      revokeBlobUrl(layerId);
-    };
-  }, [ready, view, featureCollection, layerId, sites, showSiteMarkers]);
+    return undefined;
+  }, [ready, view, featureCollection, layerId, layers, visibleSites, showSiteMarkers]);
+
+  useEffect(() => () => revokeAllBlobUrls(), []);
 
   useEffect(() => {
-    if (!ready || !view || !center) return;
-    view.goTo({ center, zoom: zoom ?? 14 });
-  }, [ready, view, center, zoom]);
+    if (!ready || !view) return;
+
+    const extent = toExtent(extentFromBounds(extentBounds));
+    if (extent) {
+      view.goTo({ target: extent, padding: 48 }).catch(reportGoToError);
+      return;
+    }
+
+    if (center) {
+      view.goTo({ center, zoom: zoom ?? 14 }).catch(reportGoToError);
+    }
+  }, [ready, view, extentBounds, center, zoom]);
 
   return (
     <div className={className}>
