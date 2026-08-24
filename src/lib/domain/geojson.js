@@ -66,6 +66,31 @@ export function boundsFromLayers(layers) {
   return { minLat, maxLat, minLng, maxLng };
 }
 
+/**
+ * Map extent for a community: union of KML layer bounds and the site's listed
+ * coordinates. Extra-area / shortfall polygons can sit far from the power
+ * station — zooming to layers alone leaves the community off-screen (Minyerri).
+ */
+export function boundsForSiteView(site, siteLayers = []) {
+  const layerBounds = boundsFromLayers(siteLayers);
+  const lat = site?.lat != null ? Number(site.lat) : null;
+  const lng = site?.lng != null ? Number(site.lng) : null;
+
+  if (lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)) {
+    if (!layerBounds) {
+      return { minLat: lat, maxLat: lat, minLng: lng, maxLng: lng };
+    }
+    return {
+      minLat: Math.min(layerBounds.minLat, lat),
+      maxLat: Math.max(layerBounds.maxLat, lat),
+      minLng: Math.min(layerBounds.minLng, lng),
+      maxLng: Math.max(layerBounds.maxLng, lng),
+    };
+  }
+
+  return layerBounds;
+}
+
 /** Fast reject before point-in-polygon tests. */
 export function boundsIntersect(a, b) {
   if (!a || !b) return false;

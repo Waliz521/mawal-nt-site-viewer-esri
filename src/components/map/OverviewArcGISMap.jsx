@@ -17,9 +17,9 @@ import {
   createIndigenousGraphicsLayer,
   createNtBoundaryLayer,
   createSiteMarkersLayer,
-  revokeBlobUrl,
+  revokeAllBlobUrls,
 } from '../../lib/arcgis/geoJsonLayers';
-import { boundsFromFeature, boundsFromLayers, extentFromBounds } from '../../lib/domain/geojson';
+import { boundsForSiteView, boundsFromFeature, extentFromBounds } from '../../lib/domain/geojson';
 import { reportGoToError, toExtent } from '../../lib/arcgis/extent';
 import { NT_CENTER, NT_EXTENT, NT_ZOOM } from '../../lib/arcgis/config';
 import MapFiltersWidget from './MapFiltersWidget';
@@ -59,7 +59,6 @@ function removeOperationalLayers(map) {
       map.remove(layer);
       layer.destroy?.();
     }
-    if (id !== 'nt-boundary') revokeBlobUrl(id);
   }
 }
 
@@ -269,6 +268,7 @@ export default function OverviewArcGISMap({
       layerList.destroy();
       measurement.destroy();
       view.destroy();
+      revokeAllBlobUrls();
     };
   }, []);
 
@@ -343,7 +343,7 @@ export default function OverviewArcGISMap({
     if (selectedCommunityId) {
       const site = allSites.find((row) => row.id === selectedCommunityId);
       const siteLayers = allLayers.filter((layer) => layer.site_id === selectedCommunityId);
-      const extent = toExtent(extentFromBounds(boundsFromLayers(siteLayers)));
+      const extent = toExtent(extentFromBounds(boundsForSiteView(site, siteLayers)));
 
       if (extent) {
         view.goTo({ target: extent, padding: 48 }).catch(reportGoToError);
