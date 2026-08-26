@@ -8,11 +8,7 @@ import {
 import { LAYER_TYPE_ORDER } from '../lib/domain/layerTypes';
 import { fetchAllLayers, fetchSites } from '../lib/api/supabase';
 import { countSitesByBatch, filterSitesByBatch } from '../lib/domain/siteBatches';
-import {
-  boundsFromFeature,
-  buildSiteSpatialFootprint,
-  siteFootprintIntersectsFeature,
-} from '../lib/domain/geojson';
+import { buildSiteIdsByLocation } from '../lib/domain/indigenousLocationMatch';
 import { useSiteBatch } from './SiteBatchContext';
 
 const MapFiltersContext = createContext(null);
@@ -36,50 +32,6 @@ function computeVisibleLayerIds(layers, visibleSiteIds, visibleTypes) {
       .filter((l) => visibleSiteIds.has(l.site_id) && visibleTypes.has(l.layer_type))
       .map((l) => l.id),
   );
-}
-
-/**
- * Site → location assignment for every location, computed once per batch.
- * Uses geometry overlap (bbox + polygon vertices/centers), not site centroid
- * alone, so footprints that straddle an ILOC boundary still match.
- */
-function buildSiteIdsByLocation(sites, layers, locations) {
-  const index = new Map();
-  if (sites.length === 0 || locations.length === 0) return index;
-
-  const layersBySite = new Map();
-  for (const layer of layers) {
-    const list = layersBySite.get(layer.site_id) ?? [];
-    list.push(layer);
-    layersBySite.set(layer.site_id, list);
-  }
-
-  const footprints = sites
-    .map((site) => ({
-      id: site.id,
-      ...buildSiteSpatialFootprint(site, layersBySite.get(site.id) ?? []),
-    }))
-    .filter((entry) => entry.bounds);
-
-  const locationEntries = locations.map((location) => ({
-    code: location.code,
-    feature: location.feature,
-    bounds: boundsFromFeature(location.feature),
-  }));
-
-  for (const location of locationEntries) {
-    if (!location.bounds) continue;
-
-    const ids = footprints
-      .filter((footprint) =>
-        siteFootprintIntersectsFeature(footprint, location.feature, location.bounds),
-      )
-      .map((footprint) => footprint.id);
-
-    if (ids.length > 0) index.set(location.code, ids);
-  }
-
-  return index;
 }
 
 export function MapFiltersProvider({ children }) {
